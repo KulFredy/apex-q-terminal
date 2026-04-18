@@ -1,17 +1,15 @@
 /**
- * APEX-Q Quant Engine - Faz 4 (Risk Yönetimi, TP/SL, R:R ve MTF Simülasyonu)
- * Bu motor, Faz-1 ve Faz-2'deki canlı Binance verilerini alıp üzerine
- * akıllı Risk Yönetimi (TP1, TP2, SL) algoritmalarını ekler.
+ * APEX-Q Quant Engine - Faz 5 (Premium Modüller)
+ * - Risk Yönetimi, TP/SL, R:R
+ * - Fibonacci Retracement & Confluence (Altın Oran %61.8)
+ * - Elliott Wave (Dalga) Tespiti
  */
 const WebSocket = require('ws');
 const redis = require('redis');
 const axios = require('axios');
 
 // Redis Bağlantısı (In-Memory Hızlı Veritabanı)
-const redisClient = redis.createClient({
-    url: 'redis://127.0.0.1:6379'
-});
-
+const redisClient = redis.createClient({ url: 'redis://127.0.0.1:6379' });
 redisClient.on('error', (err) => console.log('Redis Hatası:', err));
 redisClient.connect();
 
@@ -19,139 +17,155 @@ redisClient.connect();
 const SYMBOL = 'btcusdt';
 let currentPrice = 0;
 
-// CVD (Smart Money) Hesaplaması
+// CVD (Smart Money)
 let cumulativeVolumeDelta = 0;
-const CVD_RESET_THRESHOLD = 1000; // Her 1000 işlemde bir sıfırla (Scalp için)
+const CVD_RESET_THRESHOLD = 1000;
 let tradeCount = 0;
 
 // Order Book (Emir Defteri)
-let bestAsk = 0; // Satış Duvarı
-let bestBid = 0; // Alış Duvarı
-let askVolume = 0;
-let bidVolume = 0;
+let bestAsk = 0; let bestBid = 0;
+let askVolume = 0; let bidVolume = 0;
 
-// MTF (Çoklu Zaman Dilimi) ve Yön (Trend)
-let mtfTrends = {
-    "1m": "NEUTRAL",
-    "15m": "NEUTRAL",
-    "1h": "NEUTRAL",
-    "4h": "NEUTRAL",
-    "1d": "NEUTRAL"
-};
+// Fiyat Geçmişi (Fibonacci ve Elliott Wave için son 100 mum - 1m)
+let priceHistory = [];
+let swingHigh = 0;
+let swingLow = Infinity;
 
-// Risk Yönetimi (TP/SL) State
+// MTF ve Risk State
+let mtfTrends = { "1m": "NEUTRAL", "15m": "NEUTRAL", "1h": "NEUTRAL", "4h": "NEUTRAL", "1d": "NEUTRAL" };
 let tradeSetup = {
-    active: false,
-    direction: "NONE", // BULLISH veya BEARISH
-    entryPrice: 0,
-    tp1: 0,
-    tp2: 0,
-    sl: 0,
-    rr: "0:0",
-    riskPercentage: 2.0 // Portföyün %2'si
+    active: false, direction: "NONE", entryPrice: 0,
+    tp1: 0, tp2: 0, sl: 0, rr: "0:0", riskPercentage: 2.0,
+    fibonacci: { level: "None", value: 0 },
+    elliott: { wave: "None", description: "Bekleniyor..." }
 };
 
 /**
- * 1. Binance Canlı İşlem (Trades) WebSocket - CVD Hesaplaması İçin
+ * 1. Binance Canlı İşlem (Trades) - CVD ve Fiyat Geçmişi
  */
 const wsTrades = new WebSocket(`wss://stream.binance.com:9443/ws/${SYMBOL}@aggTrade`);
 wsTrades.on('message', (data) => {
     const trade = JSON.parse(data);
-    const price = parseFloat(trade.p);
+    currentPrice = parseFloat(trade.p);
     const qty = parseFloat(trade.q);
-    const isBuyerMaker = trade.m; // Piyasa yapıcı alıcı mı? (Eğer evetse, piyasa satışı demektir)
+    const isBuyerMaker = trade.m;
 
-    currentPrice = price;
-
-    // Delta hesaplaması: Alış hacmi (+), Satış hacmi (-)
-    if (isBuyerMaker) {
-        cumulativeVolumeDelta -= qty; // Satış
-    } else {
-        cumulativeVolumeDelta += qty; // Alış
-    }
+    if (isBuyerMaker) cumulativeVolumeDelta -= qty;
+    else cumulativeVolumeDelta += qty;
 
     tradeCount++;
     if (tradeCount >= CVD_RESET_THRESHOLD) {
-        cumulativeVolumeDelta = 0; // Mikro-trend için sıfırla
+        cumulativeVolumeDelta = 0;
         tradeCount = 0;
     }
 });
 
 /**
- * 2. Binance Emir Defteri (Order Book Heatmap) WebSocket - Likidite Duvarları İçin
+ * 1.5 Binance K-Line (Mum) - Fibonacci & Elliott Geçmişi İçin
+ */
+const wsKline = new WebSocket(`wss://stream.binance.com:9443/ws/${SYMBOL}@kline_1m`);
+wsKline.on('message', (data) => {
+    const kline = JSON.parse(data).k;
+    if (kline.x) { // Mum kapandığında
+        const closePrice = parseFloat(kline.c);
+        priceHistory.push(closePrice);
+        if (priceHistory.length > 100) priceHistory.shift();
+
+        // Swing Low / High Güncelle
+        swingLow = Math.min(...priceHistory);
+        swingHigh = Math.max(...priceHistory);
+    }
+});
+
+/**
+ * 2. Binance Emir Defteri (Order Book Heatmap)
  */
 const wsDepth = new WebSocket(`wss://stream.binance.com:9443/ws/${SYMBOL}@depth10@100ms`);
 wsDepth.on('message', (data) => {
     const depth = JSON.parse(data);
     if (!depth.bids || !depth.asks) return;
 
-    // En güçlü Alış Duvarı (Destek)
-    let maxBidVol = 0;
-    let bestBidPrice = 0;
+    let maxBidVol = 0; let bestBidPrice = 0;
     depth.bids.forEach(bid => {
         let vol = parseFloat(bid[1]);
-        if (vol > maxBidVol) {
-            maxBidVol = vol;
-            bestBidPrice = parseFloat(bid[0]);
-        }
+        if (vol > maxBidVol) { maxBidVol = vol; bestBidPrice = parseFloat(bid[0]); }
     });
 
-    // En güçlü Satış Duvarı (Direnç)
-    let maxAskVol = 0;
-    let bestAskPrice = 0;
+    let maxAskVol = 0; let bestAskPrice = 0;
     depth.asks.forEach(ask => {
         let vol = parseFloat(ask[1]);
-        if (vol > maxAskVol) {
-            maxAskVol = vol;
-            bestAskPrice = parseFloat(ask[0]);
-        }
+        if (vol > maxAskVol) { maxAskVol = vol; bestAskPrice = parseFloat(ask[0]); }
     });
 
-    bestBid = bestBidPrice;
-    bidVolume = maxBidVol;
-    bestAsk = bestAskPrice;
-    askVolume = maxAskVol;
+    bestBid = bestBidPrice; bidVolume = maxBidVol;
+    bestAsk = bestAskPrice; askVolume = maxAskVol;
 });
 
 /**
- * 3. Çoklu Zaman Dilimi (MTF) Trend Analizi Simülasyonu
- * (Faz 5'te REST API ile gerçek 4h ve 1D Binance verileri bağlanacak)
+ * 3. PREMIUM: Fibonacci Retracement & Confluence
  */
-function updateMTFTrends() {
-    // Şimdilik 1m (Scalp) trendini CVD'ye ve OrderBook'a göre belirliyoruz
-    if (cumulativeVolumeDelta > 10 && bidVolume > askVolume * 1.5) {
-        mtfTrends["1m"] = "STRONG BUY";
-    } else if (cumulativeVolumeDelta < -10 && askVolume > bidVolume * 1.5) {
-        mtfTrends["1m"] = "STRONG SELL";
+function calculateFibonacci() {
+    if (swingHigh === 0 || swingLow === Infinity || priceHistory.length < 10) return;
+
+    const diff = swingHigh - swingLow;
+    // Yükseliş trendi varsayımıyla (Aşağıdan yukarı çekilen fib)
+    const fib618 = swingHigh - (diff * 0.618); // Altın Oran (Golden Pocket)
+    const fib382 = swingHigh - (diff * 0.382);
+    const fib786 = swingHigh - (diff * 0.786);
+
+    let activeLevel = "N/A";
+    let activeValue = 0;
+
+    // Fiyat hangi Fib seviyesine daha yakın? (Sadece otonom analiz için bilgi amaçlı)
+    if (Math.abs(currentPrice - fib618) / currentPrice < 0.005) { activeLevel = "0.618 (Golden Pocket)"; activeValue = fib618; }
+    else if (Math.abs(currentPrice - fib382) / currentPrice < 0.005) { activeLevel = "0.382"; activeValue = fib382; }
+    else if (Math.abs(currentPrice - fib786) / currentPrice < 0.005) { activeLevel = "0.786"; activeValue = fib786; }
+
+    tradeSetup.fibonacci = { level: activeLevel, value: activeValue.toFixed(2) };
+}
+
+/**
+ * 4. PREMIUM: Elliott Wave Algoritması (Basitleştirilmiş)
+ */
+function calculateElliottWave() {
+    if (priceHistory.length < 20) return;
+
+    // Fiyatın hareket yönüne göre dalga tespiti (Mock/Heuristic Logic)
+    // Gerçek bir Elliott Wave çok karmaşıktır, burada fiyatsal ivme ve CVD ile tespit yapıyoruz.
+    if (currentPrice > priceHistory[priceHistory.length - 10] && cumulativeVolumeDelta > 20) {
+        tradeSetup.elliott = { wave: "Wave 3 (Impulse)", description: "Güçlü yükseliş dalgası. Trend takip ediliyor." };
+    } else if (currentPrice < priceHistory[priceHistory.length - 5] && tradeSetup.elliott.wave.includes("Wave 3")) {
+        tradeSetup.elliott = { wave: "Wave 4 (Correction)", description: "Düzeltme dalgası. Golden Pocket aranıyor." };
+    } else if (currentPrice > swingHigh) {
+        tradeSetup.elliott = { wave: "Wave 5 (Final)", description: "Son yükseliş dalgası. Uyumsuzluk/Reddedilme riski yüksek." };
     } else {
-        mtfTrends["1m"] = "NEUTRAL";
+        tradeSetup.elliott = { wave: "Konsolidasyon", description: "Net bir Elliott dalgası oluşmadı." };
     }
 }
 
 /**
- * 4. YAPAY ZEKA DESTEKLİ RİSK YÖNETİMİ & TP/SL HESAPLAMA MATEMATİĞİ
- * Bu fonksiyon, fiyatı, FVG'leri (boşlukları) ve Likidite Duvarlarını kullanarak
- * Otonom Trade Setup'ı hesaplar.
+ * 5. YAPAY ZEKA DESTEKLİ RİSK YÖNETİMİ (Fibonacci Destekli)
  */
 function calculateRiskManagement(score) {
     if (currentPrice === 0 || bestAsk === 0 || bestBid === 0) return;
 
-    // Sinyal oluşumu (Örnek: Skor 70 üstü veya CVD çok güçlüyse Long/Buy)
+    calculateFibonacci();
+    calculateElliottWave();
+
+    let isGoldenPocket = tradeSetup.fibonacci.level.includes("0.618");
+
     if (score >= 70 && cumulativeVolumeDelta > 0) {
         tradeSetup.active = true;
         tradeSetup.direction = "BULLISH (LONG)";
         tradeSetup.entryPrice = currentPrice;
         
-        // SL (Stop Loss): En güçlü alış duvarının hemen altı
-        tradeSetup.sl = bestBid * 0.998; 
+        // SL: Normalde Alış duvarının altıydı, şimdi Fib 0.786'nın da altı kontrol ediliyor
+        let baseSL = bestBid * 0.998;
+        tradeSetup.sl = isGoldenPocket ? Math.min(baseSL, tradeSetup.fibonacci.value * 0.995) : baseSL;
         
-        // TP1: En güçlü satış duvarının hemen altı
         tradeSetup.tp1 = bestAsk * 0.999;
-        
-        // TP2: Satış duvarı kırılırsa +%1 likidite boşluğu hedefi
         tradeSetup.tp2 = bestAsk * 1.01;
 
-        // Risk / Reward (R:R) Hesaplama
         let risk = tradeSetup.entryPrice - tradeSetup.sl;
         let reward = tradeSetup.tp1 - tradeSetup.entryPrice;
         let rrRatio = (reward / risk).toFixed(1);
@@ -162,24 +176,16 @@ function calculateRiskManagement(score) {
         tradeSetup.direction = "BEARISH (SHORT)";
         tradeSetup.entryPrice = currentPrice;
         
-        // SL: Satış duvarının üstü
         tradeSetup.sl = bestAsk * 1.002;
-        
-        // TP1: Alış duvarının üstü
         tradeSetup.tp1 = bestBid * 1.001;
-        
-        // TP2: Destek kırılırsa -%1 aşağısı
         tradeSetup.tp2 = bestBid * 0.99;
 
-        // R:R
         let risk = tradeSetup.sl - tradeSetup.entryPrice;
         let reward = tradeSetup.entryPrice - tradeSetup.tp1;
         let rrRatio = (reward / risk).toFixed(1);
         tradeSetup.rr = `1 : ${rrRatio}`;
 
     } else {
-        // İşlem İptal (Konsolidasyon/Kararsızlık)
-        // Eğer eski setup çok geride kaldıysa sıfırla
         if (tradeSetup.active && Math.abs(currentPrice - tradeSetup.entryPrice) / currentPrice > 0.02) {
              tradeSetup.active = false;
              tradeSetup.direction = "NONE";
@@ -189,39 +195,37 @@ function calculateRiskManagement(score) {
 }
 
 /**
- * 5. APEX-Q SCORING MOTORU (BEYİN)
+ * 6. APEX-Q SCORING MOTORU (BEYİN)
  */
 setInterval(async () => {
     if (currentPrice === 0) return;
 
-    let score = 50; // Nötr başlangıç
+    let score = 50;
 
-    // Kural 1: CVD (Akıllı Para Akışı)
     if (cumulativeVolumeDelta > 15) score += 20;
     else if (cumulativeVolumeDelta > 5) score += 10;
     else if (cumulativeVolumeDelta < -15) score -= 20;
     else if (cumulativeVolumeDelta < -5) score -= 10;
 
-    // Kural 2: Order Book Baskısı
-    if (bidVolume > askVolume * 2) score += 15; // Devasa alım duvarı
-    if (askVolume > bidVolume * 2) score -= 15; // Devasa satış duvarı
+    if (bidVolume > askVolume * 2) score += 15;
+    if (askVolume > bidVolume * 2) score -= 15;
 
-    // Kural 3: Fiyatın duvarlara olan mesafesi
-    if (currentPrice > bestBid && (currentPrice - bestBid) < 10) score += 5; // Desteğe yapıştı (Sıçrama)
-    if (currentPrice < bestAsk && (bestAsk - currentPrice) < 10) score -= 5; // Dirence çarptı (Red)
+    if (currentPrice > bestBid && (currentPrice - bestBid) < 10) score += 5;
+    if (currentPrice < bestAsk && (bestAsk - currentPrice) < 10) score -= 5;
 
-    // Sınırlandırma (0 - 100)
+    // Fibonacci Confluence Bonusu (Fiyat Golden Pocket'a denk gelirse ek puan)
+    if (tradeSetup.fibonacci && tradeSetup.fibonacci.level.includes("0.618")) {
+        score += 10; 
+    }
+
     score = Math.max(0, Math.min(100, score));
 
-    // Karar Metni
     let signalText = "NEUTRAL ⚪";
     if (score >= 80) signalText = "STRONG BUY 🟢";
     else if (score >= 60) signalText = "BUY 📈";
     else if (score <= 20) signalText = "STRONG SELL 🔴";
     else if (score <= 40) signalText = "SELL 📉";
 
-    // MTF ve Risk Parametrelerini Güncelle
-    updateMTFTrends();
     calculateRiskManagement(score);
 
     const payload = {
@@ -239,11 +243,11 @@ setInterval(async () => {
         analysis: tradeSetup
     };
 
-    // Redis'e (RAM'e) Kaydet (Anahtarı 2 saniye ömürlü yapıyoruz ki hep taze kalsın)
     await redisClient.setEx('apex_terminal_btc', 2, JSON.stringify(payload));
-
-    process.stdout.write(`[FAZ-4] ${signalText} | Fiyat: $${payload.price} | Skor: ${score} | CVD: ${payload.cvd} | AI: ${payload.analysis.direction} (R:R ${payload.analysis.rr})\r`);
+    
+    // Log formatı
+    process.stdout.write(`[FAZ-5 Premium] $${payload.price} | Score: ${score} | CVD: ${payload.cvd} | Fib: ${tradeSetup.fibonacci.level} | Wave: ${tradeSetup.elliott.wave.split(" ")[0]}\r`);
 
 }, 1000);
 
-console.log("🚀 APEX-Q Quant Motoru (FAZ 4 - MTF & Risk Yönetimi) Başlatıldı...");
+console.log("🚀 APEX-Q Premium (FAZ 5 - Fibonacci & Elliott Wave Modülleri) Başlatıldı...");
