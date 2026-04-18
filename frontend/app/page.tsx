@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { TrendingUp, TrendingDown, Activity, AlertTriangle, Timer, Layers, RefreshCcw, Target, ShieldAlert, Zap, Wallet, PlayCircle } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, AlertTriangle, Timer, Layers, RefreshCcw, Target, ShieldAlert, Zap, Wallet, PlayCircle, BarChart2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function Home() {
@@ -108,7 +108,7 @@ export default function Home() {
     );
   }
 
-  // Faz-4'ten gelen gerçek Risk Management Verileri
+  // Faz-4 ve Faz-5'ten gelen Risk ve Premium Modül Verileri
   const analysis = data.analysis; 
   const isBuy = data.signal.includes("BUY");
   const isNeutral = data.signal.includes("NEUTRAL");
@@ -317,8 +317,9 @@ export default function Home() {
         </motion.div>
       ) : (
         // SCALP / SWING MODU EKRANI (Ana Grid)
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           
+          {/* APEX SCORE TİLES */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -345,6 +346,7 @@ export default function Home() {
             </div>
           </motion.div>
 
+          {/* PRICE & CVD TİLES */}
           <div className="col-span-1 md:col-span-1 bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col justify-between">
             <div>
               <h2 className="text-slate-500 text-sm tracking-widest font-bold mb-6">PRICE ACTION (BTC)</h2>
@@ -362,6 +364,40 @@ export default function Home() {
             </div>
           </div>
 
+          {/* FIBONACCI & ELLIOTT WAVE (PREMIUM FAZ-5) */}
+          <div className="col-span-1 md:col-span-1 bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-amber-500" />
+            <div>
+              <div className="flex items-center gap-2 mb-6">
+                <BarChart2 className="w-5 h-5 text-amber-500" />
+                <h2 className="text-slate-400 text-sm tracking-widest font-bold">FIBONACCI & ELLIOTT</h2>
+              </div>
+
+              {/* Fibonacci Seviyesi */}
+              <div className="bg-[#1A1525] border border-amber-900/30 p-3 rounded-lg mb-4">
+                <div className="text-[10px] text-amber-500 font-bold tracking-widest mb-1">GOLDEN POCKET (FIB)</div>
+                <div className="text-xl font-bold text-white mb-1">
+                    {analysis.fibonacci ? analysis.fibonacci.level : "Hesaplanıyor..."}
+                </div>
+                <div className="text-sm text-amber-400/70">
+                    Sınır: ${analysis.fibonacci && analysis.fibonacci.value > 0 ? parseFloat(analysis.fibonacci.value).toLocaleString('en-US') : "---"}
+                </div>
+              </div>
+            </div>
+
+            {/* Elliott Wave */}
+            <div className="pt-4 border-t border-slate-800">
+              <h3 className="text-slate-500 text-[10px] tracking-widest font-bold mb-2">ELLIOTT WAVE DETECTOR</h3>
+              <div className="text-lg font-bold text-blue-400 mb-1">
+                {analysis.elliott ? analysis.elliott.wave : "Tarama Yapılıyor..."}
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {analysis.elliott ? analysis.elliott.description : "Piyasa hacim ivmesi hesaplanıyor, lütfen bekleyin."}
+              </p>
+            </div>
+          </div>
+
+          {/* ORDER BOOK WALLS */}
           <div className="col-span-1 md:col-span-1 bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl">
             <h2 className="text-slate-500 text-sm tracking-widest font-bold mb-6">ORDER BOOK WALLS</h2>
             
