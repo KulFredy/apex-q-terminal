@@ -2,37 +2,31 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { TrendingUp, TrendingDown, Activity, AlertTriangle, Timer, Layers, BarChart2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, AlertTriangle, Timer, Layers, RefreshCcw, Target, ShieldAlert, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function Home() {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState(false);
   const [activeMode, setActiveMode] = useState("SCALP");
-  const [countdown, setCountdown] = useState("--:--");
+  const [candleCountdown, setCandleCountdown] = useState("--:--");
+  const [refreshCountdown, setRefreshCountdown] = useState(1);
 
-  // Mum Kapanış Sayacı (Candle Close Countdown)
+  // Mum Kapanış Sayacı (Sadece Swing için)
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
-      if (activeMode === "SCALP") {
-        // Scalp için 1 dakikalık mum sayacı
-        const secondsLeft = 60 - now.getSeconds();
-        setCountdown(`00:${secondsLeft.toString().padStart(2, '0')}`);
-      } else if (activeMode === "SWING") {
-        // Swing için 1 Günlük mum sayacı (UTC 00:00)
+      if (activeMode === "SWING") {
         const hoursLeft = 23 - now.getUTCHours();
         const minutesLeft = 59 - now.getUTCMinutes();
         const secondsLeft = 59 - now.getUTCSeconds();
-        setCountdown(`${hoursLeft}h ${minutesLeft}m ${secondsLeft}s`);
-      } else {
-        setCountdown("--:--");
+        setCandleCountdown(`${hoursLeft}h ${minutesLeft}m ${secondsLeft}s`);
       }
     }, 1000);
     return () => clearInterval(timer);
   }, [activeMode]);
 
-  // Saniyede 1 kere API'yi okuyacak polling motoru
+  // Veri Yenileme (Refresh) Sayacı ve API Polling
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -45,8 +39,22 @@ export default function Home() {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 1000);
-    return () => clearInterval(interval);
+    
+    // Her saniye veriyi çek ve sayacı yenile
+    const interval = setInterval(() => {
+      fetchData();
+      setRefreshCountdown(1); // 1 saniyeden geriye sayım simülasyonu
+    }, 1000);
+
+    // Salise bazlı görsel sayaç efekti
+    const msInterval = setInterval(() => {
+      setRefreshCountdown((prev) => (prev > 0 ? prev - 0.1 : 0));
+    }, 100);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(msInterval);
+    };
   }, []);
 
   if (error) {
@@ -67,13 +75,11 @@ export default function Home() {
     );
   }
 
-  // Arayüz (Signal & Score Logic)
   const isBuy = data.signal.includes("BUY");
   const isNeutral = data.signal.includes("NEUTRAL");
   const scoreColor = isBuy ? "text-[#00E676]" : isNeutral ? "text-slate-400" : "text-[#FF1744]";
   const signalIcon = isBuy ? <TrendingUp className="w-12 h-12" /> : isNeutral ? <Activity className="w-12 h-12" /> : <TrendingDown className="w-12 h-12" />;
 
-  // MTF Verileri
   const mtfScalp = [
     { tf: "1s", signal: "STRONG BUY", color: "bg-[#00E676] text-black" },
     { tf: "10s", signal: "BUY", color: "bg-green-500/20 text-[#00E676] border border-[#00E676]/30" },
@@ -102,7 +108,6 @@ export default function Home() {
         <div className="flex flex-col md:flex-row items-center gap-6">
           <h1 className="text-3xl font-black text-white tracking-[0.2em]">APEX-Q</h1>
           
-          {/* TAB MENÜSÜ (SCALP / SWING / ANALİZ) */}
           <div className="flex bg-[#151C2C] rounded-lg p-1 border border-slate-800 shadow-lg">
             {["SCALP", "SWING", "ANALİZ"].map((mode) => (
               <button
@@ -120,14 +125,28 @@ export default function Home() {
           </div>
         </div>
 
-        {/* CANLI İNDİKATÖR VE GERİ SAYIM SAYACI */}
+        {/* SAĞ ÜST İNDİKATÖRLER */}
         <div className="flex items-center gap-4">
-          {/* Geri Sayım Sayacı (Candle Timer) */}
-          <div className="flex items-center gap-2 bg-[#151C2C] px-4 py-2 rounded-lg border border-slate-800 text-slate-400">
-            <Timer className="w-4 h-4 text-[#00E676]" />
-            <span className="text-xs font-bold tracking-widest">CANDLE CLOSE:</span>
-            <span className="text-sm font-black text-white w-20 text-right">{countdown}</span>
+          
+          {/* VERİ GÜNCELLEME SAYACI (Tüm Modlarda Aktif) */}
+          <div className="flex items-center gap-2 bg-[#1A1525] px-4 py-2 rounded-lg border border-purple-900/50 text-purple-400">
+            <RefreshCcw className={`w-4 h-4 ${refreshCountdown < 0.2 ? 'animate-spin text-purple-300' : ''}`} />
+            <span className="text-xs font-bold tracking-widest">NEXT UPDATE:</span>
+            <span className="text-sm font-black text-white w-8 text-right">{refreshCountdown.toFixed(1)}s</span>
           </div>
+
+          {/* MUM KAPANIŞ SAYACI (Sadece Swing Modunda Gösterilir) */}
+          {activeMode === "SWING" && (
+            <motion.div 
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-2 bg-[#151C2C] px-4 py-2 rounded-lg border border-slate-800 text-slate-400"
+            >
+              <Timer className="w-4 h-4 text-[#00E676]" />
+              <span className="text-xs font-bold tracking-widest">CANDLE CLOSE:</span>
+              <span className="text-sm font-black text-white w-24 text-right">{candleCountdown}</span>
+            </motion.div>
+          )}
 
           <div className="flex items-center gap-3 bg-[#151C2C] px-4 py-2 rounded-full border border-slate-800">
             <span className="relative flex h-3 w-3">
@@ -168,19 +187,81 @@ export default function Home() {
 
       {/* ANA İÇERİK EKRANI */}
       {activeMode === "ANALİZ" ? (
-        // ANALİZ MODU EKRANI
-        <div className="flex-1 flex items-center justify-center border-2 border-slate-800 rounded-xl bg-[#151C2C]/50 border-dashed min-h-[400px]">
-          <div className="text-center">
-            <BarChart2 className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-            <h2 className="text-2xl tracking-widest text-slate-400 font-bold mb-2">GELİŞMİŞ ANALİZ & ON-CHAIN</h2>
-            <p className="text-slate-600 max-w-md mx-auto">Faz 4 ile birlikte Fibonacci Confluence, Elliott Dalga Raporları ve AI destekli On-Chain verileri burada listelenecektir.</p>
+        // YAPAY ZEKA ANALİZ & RİSK YÖNETİMİ EKRANI
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+        >
+          {/* AI Sentez Paneli */}
+          <div className="bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-blue-500" />
+            <div className="flex items-center gap-3 mb-6">
+              <Zap className="w-6 h-6 text-blue-500" />
+              <h2 className="text-slate-400 font-bold tracking-widest text-sm">AI SIGNAL SYNTHESIS</h2>
+            </div>
+            <p className="text-slate-500 text-sm leading-relaxed mb-4">
+              Scalp ve Swing modüllerinden gelen anlık MTF verileri, Order Book yoğunluğu ve On-Chain CVD akışı yapay zeka tarafından sentezlenmektedir.
+            </p>
+            <div className="mt-auto bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+              <span className="text-xs text-blue-400 font-bold block mb-1">AI KARARI:</span>
+              <span className="text-xl text-white font-black">YÖN YUKARI (BULLISH)</span>
+            </div>
           </div>
-        </div>
+
+          {/* Pozisyon & Hedefler Paneli */}
+          <div className="bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-[#00E676]" />
+            <div className="flex items-center gap-3 mb-6">
+              <Target className="w-6 h-6 text-[#00E676]" />
+              <h2 className="text-slate-400 font-bold tracking-widest text-sm">TRADE SETUP (SETUP 1)</h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex justify-between items-center bg-[#0B0F19] p-3 rounded-lg border border-slate-800">
+                <span className="text-slate-500 text-xs font-bold">ENTRY (Giriş)</span>
+                <span className="text-white font-bold">$75,640.00</span>
+              </div>
+              <div className="flex justify-between items-center bg-green-900/10 p-3 rounded-lg border border-green-900/30">
+                <span className="text-green-500 text-xs font-bold">TP1 (Kar Al 1)</span>
+                <span className="text-green-400 font-bold">$76,200.00</span>
+              </div>
+              <div className="flex justify-between items-center bg-green-900/20 p-3 rounded-lg border border-green-500/30">
+                <span className="text-green-500 text-xs font-bold">TP2 (Kar Al 2)</span>
+                <span className="text-green-400 font-bold">$77,100.00</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Risk Yönetimi Paneli */}
+          <div className="bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-[#FF1744]" />
+            <div className="flex items-center gap-3 mb-6">
+              <ShieldAlert className="w-6 h-6 text-[#FF1744]" />
+              <h2 className="text-slate-400 font-bold tracking-widest text-sm">RISK MANAGEMENT</h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex justify-between items-center bg-red-900/10 p-3 rounded-lg border border-red-900/30">
+                <span className="text-red-500 text-xs font-bold">STOP LOSS (Zarar Kes)</span>
+                <span className="text-red-400 font-bold">$74,800.00</span>
+              </div>
+              <div className="flex justify-between items-center bg-[#0B0F19] p-3 rounded-lg border border-slate-800 mt-4">
+                <span className="text-slate-500 text-xs font-bold">Risk / Reward (R:R)</span>
+                <span className="text-amber-400 font-bold tracking-widest">1 : 2.5</span>
+              </div>
+              <div className="flex justify-between items-center bg-[#0B0F19] p-3 rounded-lg border border-slate-800">
+                <span className="text-slate-500 text-xs font-bold">Portföy Risk Payı</span>
+                <span className="text-white font-bold">%2.0</span>
+              </div>
+            </div>
+          </div>
+
+        </motion.div>
       ) : (
         // SCALP / SWING MODU EKRANI (Ana Grid)
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           
-          {/* 1. SOL BLOK: APEX SKORU & SİNYAL */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -207,7 +288,6 @@ export default function Home() {
             </div>
           </motion.div>
 
-          {/* 2. ORTA BLOK: FİYAT VE CVD */}
           <div className="col-span-1 md:col-span-1 bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col justify-between">
             <div>
               <h2 className="text-slate-500 text-sm tracking-widest font-bold mb-6">PRICE ACTION (BTC)</h2>
@@ -225,7 +305,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 3. SAĞ BLOK: ORDER BOOK HEATMAP */}
           <div className="col-span-1 md:col-span-1 bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl">
             <h2 className="text-slate-500 text-sm tracking-widest font-bold mb-6">ORDER BOOK WALLS</h2>
             
