@@ -2,17 +2,19 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { TrendingUp, TrendingDown, Activity, AlertTriangle, Timer, Layers, RefreshCcw, Target, ShieldAlert, Zap } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, AlertTriangle, Timer, Layers, RefreshCcw, Target, ShieldAlert, Zap, Wallet, PlayCircle } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function Home() {
   const [data, setData] = useState<any>(null);
+  const [tradeData, setTradeData] = useState<any>(null); // Bakiye & Açık Pozisyonlar
   const [error, setError] = useState(false);
   const [activeMode, setActiveMode] = useState("SCALP");
   const [candleCountdown, setCandleCountdown] = useState("--:--");
   const [refreshCountdown, setRefreshCountdown] = useState(1);
+  const [isExecuting, setIsExecuting] = useState(false); // Otonom Buton Durumu
 
-  // Mum Kapanış Sayacı (Sadece Swing için)
+  // Mum Kapanış Sayacı
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
@@ -26,12 +28,17 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [activeMode]);
 
-  // Veri Yenileme (Refresh) Sayacı ve API Polling
+  // Polling (Canlı Veri & Bakiye Okuma)
   useEffect(() => {
     const fetchData = async () => {
       try {
         const response = await axios.get("http://localhost:3005/api/v1/terminal/scalp/btc");
         setData(response.data);
+
+        // Canlı Bakiye (Live Trade API)
+        const tradeResponse = await axios.get("http://localhost:3005/api/v1/trade/portfolio");
+        setTradeData(tradeResponse.data);
+
         setError(false);
       } catch (e) {
         setError(true);
@@ -39,14 +46,11 @@ export default function Home() {
     };
 
     fetchData();
-    
-    // Her saniye veriyi çek ve sayacı yenile
     const interval = setInterval(() => {
       fetchData();
-      setRefreshCountdown(1); // 1 saniyeden geriye sayım simülasyonu
+      setRefreshCountdown(1);
     }, 1000);
 
-    // Salise bazlı görsel sayaç efekti
     const msInterval = setInterval(() => {
       setRefreshCountdown((prev) => (prev > 0 ? prev - 0.1 : 0));
     }, 100);
@@ -56,6 +60,35 @@ export default function Home() {
       clearInterval(msInterval);
     };
   }, []);
+
+  // Kullanıcının veya Yapay Zekanın emri anında borsaya iletmesi (Otonom Tuş)
+  const executeOtonomTrade = async () => {
+    if (!data || !data.analysis || data.analysis.direction === "NONE") {
+        alert("GEÇERLİ BİR SİNYAL VEYA HEDEF YOK (Konsolidasyon Süreci)");
+        return;
+    }
+
+    setIsExecuting(true);
+    
+    try {
+        const response = await axios.post("http://localhost:3005/api/v1/trade/execute", {
+            symbol: "BTC/USDT",
+            side: data.analysis.direction.includes("LONG") ? "BUY" : "SELL",
+            type: "market",
+            amount: 0.1, // Örnek %2 Portföy Risk Miktarı
+            price: data.analysis.entryPrice,
+            sl: data.analysis.sl,
+            tp1: data.analysis.tp1,
+            tp2: data.analysis.tp2
+        });
+
+        alert(`BİNANCE EMRİ İLETİLDİ!\n${response.data.message}`);
+    } catch (e: any) {
+        alert("EMİR HATA: " + e.message);
+    } finally {
+        setIsExecuting(false);
+    }
+  };
 
   if (error) {
     return (
@@ -75,6 +108,8 @@ export default function Home() {
     );
   }
 
+  // Faz-4'ten gelen gerçek Risk Management Verileri
+  const analysis = data.analysis; 
   const isBuy = data.signal.includes("BUY");
   const isNeutral = data.signal.includes("NEUTRAL");
   const scoreColor = isBuy ? "text-[#00E676]" : isNeutral ? "text-slate-400" : "text-[#FF1744]";
@@ -103,13 +138,13 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#0B0F19] text-slate-300 p-6 font-mono flex flex-col">
       
-      {/* HEADER & NAVIGATION */}
+      {/* HEADER & PORTFOLIO */}
       <header className="flex flex-col xl:flex-row justify-between items-center mb-6 gap-6">
         <div className="flex flex-col md:flex-row items-center gap-6">
           <h1 className="text-3xl font-black text-white tracking-[0.2em]">APEX-Q</h1>
           
           <div className="flex bg-[#151C2C] rounded-lg p-1 border border-slate-800 shadow-lg">
-            {["SCALP", "SWING", "ANALİZ"].map((mode) => (
+            {["SCALP", "SWING", "LIVE TRADE"].map((mode) => (
               <button
                 key={mode}
                 onClick={() => setActiveMode(mode)}
@@ -125,17 +160,24 @@ export default function Home() {
           </div>
         </div>
 
-        {/* SAĞ ÜST İNDİKATÖRLER */}
+        {/* CANLI PORTFÖY (MOCK VEYA GERÇEK) */}
+        {tradeData && (
+          <div className="flex items-center gap-4 bg-[#151C2C] border border-blue-900/50 p-2 rounded-lg">
+              <Wallet className="w-5 h-5 text-blue-400 ml-2" />
+              <div className="flex flex-col">
+                  <span className="text-[10px] text-slate-500 font-bold tracking-widest">TOTAL BALANCE</span>
+                  <span className="text-sm text-white font-black">${tradeData.balance.total.toLocaleString()}</span>
+              </div>
+          </div>
+        )}
+
         <div className="flex items-center gap-4">
-          
-          {/* VERİ GÜNCELLEME SAYACI (Tüm Modlarda Aktif) */}
           <div className="flex items-center gap-2 bg-[#1A1525] px-4 py-2 rounded-lg border border-purple-900/50 text-purple-400">
             <RefreshCcw className={`w-4 h-4 ${refreshCountdown < 0.2 ? 'animate-spin text-purple-300' : ''}`} />
             <span className="text-xs font-bold tracking-widest">NEXT UPDATE:</span>
             <span className="text-sm font-black text-white w-8 text-right">{refreshCountdown.toFixed(1)}s</span>
           </div>
 
-          {/* MUM KAPANIŞ SAYACI (Sadece Swing Modunda Gösterilir) */}
           {activeMode === "SWING" && (
             <motion.div 
               initial={{ opacity: 0, x: 20 }}
@@ -159,7 +201,7 @@ export default function Home() {
       </header>
 
       {/* MULTI-TIMEFRAME (MTF) TOP BANNER */}
-      {activeMode !== "ANALİZ" && (
+      {activeMode !== "LIVE TRADE" && (
         <div className="w-full bg-[#151C2C] border border-slate-800 rounded-xl p-4 mb-8 flex flex-col md:flex-row items-center gap-4 shadow-lg transition-all duration-300">
           <div className="flex items-center gap-2 text-slate-400 border-r border-slate-700 pr-4 min-w-[120px]">
             <Layers className="w-5 h-5" />
@@ -186,49 +228,64 @@ export default function Home() {
       )}
 
       {/* ANA İÇERİK EKRANI */}
-      {activeMode === "ANALİZ" ? (
-        // YAPAY ZEKA ANALİZ & RİSK YÖNETİMİ EKRANI
+      {activeMode === "LIVE TRADE" ? (
+        // YAPAY ZEKA OTONOM (FAZ-4) & CANLI İŞLEM PANELİ
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
         >
-          {/* AI Sentez Paneli */}
+          {/* AI Sentez & Otonom Tetik Paneli */}
           <div className="bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-blue-500" />
             <div className="flex items-center gap-3 mb-6">
               <Zap className="w-6 h-6 text-blue-500" />
-              <h2 className="text-slate-400 font-bold tracking-widest text-sm">AI SIGNAL SYNTHESIS</h2>
+              <h2 className="text-slate-400 font-bold tracking-widest text-sm">AI ALGORITHMIC TRADE</h2>
             </div>
             <p className="text-slate-500 text-sm leading-relaxed mb-4">
-              Scalp ve Swing modüllerinden gelen anlık MTF verileri, Order Book yoğunluğu ve On-Chain CVD akışı yapay zeka tarafından sentezlenmektedir.
+              Aşağıdaki buton, Faz-4 Kuantum Motoru'nun Likidite Duvarlarına ve FVG Boşluklarına göre hazırladığı R:R kurulumunu (Setup) doğrudan Binance API'ye (Market Order olarak) iletir.
             </p>
-            <div className="mt-auto bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
-              <span className="text-xs text-blue-400 font-bold block mb-1">AI KARARI:</span>
-              <span className="text-xl text-white font-black">YÖN YUKARI (BULLISH)</span>
+            <div className={`mt-auto mb-4 border rounded-lg p-4 ${analysis.direction.includes("LONG") ? 'bg-green-900/20 border-green-500/30' : analysis.direction.includes("SHORT") ? 'bg-red-900/20 border-red-500/30' : 'bg-slate-900/20 border-slate-600'}`}>
+              <span className="text-xs font-bold block mb-1">OTONOM KARAR:</span>
+              <span className={`text-xl font-black ${analysis.direction.includes("LONG") ? 'text-[#00E676]' : analysis.direction.includes("SHORT") ? 'text-[#FF1744]' : 'text-slate-500'}`}>
+                  {analysis.direction}
+              </span>
             </div>
+
+            <button 
+                onClick={executeOtonomTrade}
+                disabled={isExecuting || analysis.direction === "NONE"}
+                className={`w-full py-4 rounded-xl flex items-center justify-center gap-2 font-black tracking-widest transition-all ${
+                    analysis.direction === "NONE" 
+                        ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)]'
+                }`}
+            >
+                {isExecuting ? <RefreshCcw className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-6 h-6" />}
+                EXECUTE SETUP ON BINANCE
+            </button>
           </div>
 
-          {/* Pozisyon & Hedefler Paneli */}
+          {/* Motorun Anlık (Live) Setup'ı Paneli */}
           <div className="bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-[#00E676]" />
+            <div className={`absolute top-0 left-0 w-full h-1 ${analysis.direction.includes("LONG") ? 'bg-[#00E676]' : 'bg-[#FF1744]'}`} />
             <div className="flex items-center gap-3 mb-6">
-              <Target className="w-6 h-6 text-[#00E676]" />
-              <h2 className="text-slate-400 font-bold tracking-widest text-sm">TRADE SETUP (SETUP 1)</h2>
+              <Target className={`w-6 h-6 ${analysis.direction.includes("LONG") ? 'text-[#00E676]' : 'text-[#FF1744]'}`} />
+              <h2 className="text-slate-400 font-bold tracking-widest text-sm">LIVE QUANT SETUP</h2>
             </div>
             
             <div className="space-y-4">
               <div className="flex justify-between items-center bg-[#0B0F19] p-3 rounded-lg border border-slate-800">
-                <span className="text-slate-500 text-xs font-bold">ENTRY (Giriş)</span>
-                <span className="text-white font-bold">$75,640.00</span>
+                <span className="text-slate-500 text-xs font-bold">ENTRY (Motorun Fiyatı)</span>
+                <span className="text-white font-bold">${parseFloat(analysis.entryPrice).toLocaleString('en-US')}</span>
               </div>
               <div className="flex justify-between items-center bg-green-900/10 p-3 rounded-lg border border-green-900/30">
-                <span className="text-green-500 text-xs font-bold">TP1 (Kar Al 1)</span>
-                <span className="text-green-400 font-bold">$76,200.00</span>
+                <span className="text-green-500 text-xs font-bold">TP1 (Direnç Öncesi)</span>
+                <span className="text-green-400 font-bold">${parseFloat(analysis.tp1).toLocaleString('en-US')}</span>
               </div>
               <div className="flex justify-between items-center bg-green-900/20 p-3 rounded-lg border border-green-500/30">
-                <span className="text-green-500 text-xs font-bold">TP2 (Kar Al 2)</span>
-                <span className="text-green-400 font-bold">$77,100.00</span>
+                <span className="text-green-500 text-xs font-bold">TP2 (Likidite Boşluğu)</span>
+                <span className="text-green-400 font-bold">${parseFloat(analysis.tp2).toLocaleString('en-US')}</span>
               </div>
             </div>
           </div>
@@ -243,16 +300,16 @@ export default function Home() {
             
             <div className="space-y-4">
               <div className="flex justify-between items-center bg-red-900/10 p-3 rounded-lg border border-red-900/30">
-                <span className="text-red-500 text-xs font-bold">STOP LOSS (Zarar Kes)</span>
-                <span className="text-red-400 font-bold">$74,800.00</span>
+                <span className="text-red-500 text-xs font-bold">STOP LOSS (Likidite Altı)</span>
+                <span className="text-red-400 font-bold">${parseFloat(analysis.sl).toLocaleString('en-US')}</span>
               </div>
               <div className="flex justify-between items-center bg-[#0B0F19] p-3 rounded-lg border border-slate-800 mt-4">
                 <span className="text-slate-500 text-xs font-bold">Risk / Reward (R:R)</span>
-                <span className="text-amber-400 font-bold tracking-widest">1 : 2.5</span>
+                <span className="text-amber-400 font-bold tracking-widest">{analysis.rr}</span>
               </div>
               <div className="flex justify-between items-center bg-[#0B0F19] p-3 rounded-lg border border-slate-800">
                 <span className="text-slate-500 text-xs font-bold">Portföy Risk Payı</span>
-                <span className="text-white font-bold">%2.0</span>
+                <span className="text-white font-bold">%{analysis.riskPercentage}</span>
               </div>
             </div>
           </div>
