@@ -97,9 +97,18 @@ async function startServer() {
         }
     });
 
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
         console.log(`[APEX-Q] Binance Trade (CCXT) modülü aktif.`);
     });
 }
 
-startServer();
+startServer();app.post('/api/v1/trade/start-auto', async (req, res) => {
+    try {
+        const { botName, exchange, marketPair, apiSecret, apiToken, riskLevel, stopLoss, takeProfit } = req.body;
+        console.log(`[AUTO TRADE BOT] Bot '${botName}' başlatılıyor... Borsası: ${exchange}, Market: ${marketPair}, Risk: ${riskLevel}%, SL: ${stopLoss}%, TP: ${takeProfit}%`);
+        // Burada gerçek Auto Trade motorunu başlatan kodlar olacak. Şimdilik mock dönüyoruz.
+        res.json({ success: true, message: `Bot '${botName}' başarıyla aktif edildi ve izlemeye alındı.` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});

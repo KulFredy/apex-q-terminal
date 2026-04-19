@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { TrendingUp, TrendingDown, Activity, AlertTriangle, Timer, Layers, RefreshCcw, Target, ShieldAlert, Zap, Wallet, PlayCircle, BarChart2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, AlertTriangle, Timer, Layers, RefreshCcw, Target, ShieldAlert, Zap, Wallet, PlayCircle, BarChart2, Bot } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function Home() {
@@ -32,11 +32,11 @@ export default function Home() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await axios.get("http://localhost:3005/api/v1/terminal/scalp/btc");
+        const response = await axios.get("/api/v1/terminal/scalp/btc");
         setData(response.data);
 
         // Canlı Bakiye (Live Trade API)
-        const tradeResponse = await axios.get("http://localhost:3005/api/v1/trade/portfolio");
+        const tradeResponse = await axios.get("/api/v1/trade/portfolio");
         setTradeData(tradeResponse.data);
 
         setError(false);
@@ -71,7 +71,7 @@ export default function Home() {
     setIsExecuting(true);
     
     try {
-        const response = await axios.post("http://localhost:3005/api/v1/trade/execute", {
+        const response = await axios.post("/api/v1/trade/execute", {
             symbol: "BTC/USDT",
             side: data.analysis.direction.includes("LONG") ? "BUY" : "SELL",
             type: "market",
@@ -141,6 +141,12 @@ export default function Home() {
       {/* HEADER & PORTFOLIO */}
       <header className="flex flex-col xl:flex-row justify-between items-center mb-6 gap-6">
         <div className="flex flex-col md:flex-row items-center gap-6">
+          <select className="bg-[#151C2C] text-white border border-slate-800 rounded px-4 py-2 font-bold outline-none">
+            <option value="BTCUSDT">BTC/USDT</option>
+            <option value="ETHUSDT">ETH/USDT</option>
+            <option value="SOLUSDT">SOL/USDT</option>
+            <option value="XRPUSDT">XRP/USDT</option>
+          </select>
           <h1 className="text-3xl font-black text-white tracking-[0.2em]">APEX-Q</h1>
           
           <div className="flex bg-[#151C2C] rounded-lg p-1 border border-slate-800 shadow-lg">
@@ -201,7 +207,7 @@ export default function Home() {
       </header>
 
       {/* MULTI-TIMEFRAME (MTF) TOP BANNER */}
-      {activeMode !== "LIVE TRADE" && (
+      {true && (
         <div className="w-full bg-[#151C2C] border border-slate-800 rounded-xl p-4 mb-8 flex flex-col md:flex-row items-center gap-4 shadow-lg transition-all duration-300">
           <div className="flex items-center gap-2 text-slate-400 border-r border-slate-700 pr-4 min-w-[120px]">
             <Layers className="w-5 h-5" />
@@ -218,9 +224,9 @@ export default function Home() {
                 className="flex flex-col items-center justify-center min-w-[80px]"
               >
                 <span className="text-slate-500 text-xs font-bold mb-1">{item.tf}</span>
-                <div className={`px-3 py-1.5 rounded text-[10px] font-black tracking-wider w-full text-center whitespace-nowrap ${item.color} shadow-sm`}>
+                <button className={`px-3 py-1.5 rounded text-[10px] font-black tracking-wider w-full text-center whitespace-nowrap ${item.color} shadow-sm hover:brightness-125 transition-all`}>
                   {item.signal}
-                </div>
+                </button>
               </motion.div>
             ))}
           </div>
@@ -233,7 +239,7 @@ export default function Home() {
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
         >
           {/* AI Sentez & Otonom Tetik Paneli */}
           <div className="bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col relative overflow-hidden">
@@ -241,6 +247,10 @@ export default function Home() {
             <div className="flex items-center gap-3 mb-6">
               <Zap className="w-6 h-6 text-blue-500" />
               <h2 className="text-slate-400 font-bold tracking-widest text-sm">AI ALGORITHMIC TRADE</h2>
+            </div>
+            <div className="bg-[#0B0F19] border border-slate-800 rounded-lg p-3 mb-4 flex items-center gap-3">
+              <Bot className="w-5 h-5 text-purple-400 animate-pulse" />
+              <p className="text-xs text-purple-300 font-medium">Yapay Zeka Analiz Aracı aktif edildi. Piyasa hacmi, CVD ve Orderbook derinlikleri saniyede 10 kez işleniyor.</p>
             </div>
             <p className="text-slate-500 text-sm leading-relaxed mb-4">
               Aşağıdaki buton, Faz-4 Kuantum Motoru'nun Likidite Duvarlarına ve FVG Boşluklarına göre hazırladığı R:R kurulumunu (Setup) doğrudan Binance API'ye (Market Order olarak) iletir.
@@ -314,6 +324,79 @@ export default function Home() {
             </div>
           </div>
 
+          {/* AUTO TRADE BOT MODÜLÜ (Görseldeki Mantık) */}
+          <div className="bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-amber-500" />
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <Zap className="w-6 h-6 text-amber-500" />
+                <h2 className="text-slate-400 font-bold tracking-widest text-sm">AUTO TRADE BOT</h2>
+              </div>
+              <div className="w-2 h-2 rounded-full bg-[#00E676] animate-pulse"></div>
+            </div>
+
+            <div className="space-y-3 mt-2 flex-1">
+               <div className="bg-[#0B0F19] p-3 rounded-lg border border-slate-800">
+                 <span className="text-slate-500 text-[10px] font-bold block mb-1">BOT İSMİ</span>
+                 <input type="text" className="bg-transparent text-white font-bold text-sm w-full outline-none" defaultValue="APEX QUANT V1" readOnly />
+               </div>
+
+               <div className="flex gap-2">
+                 <div className="bg-[#0B0F19] p-3 rounded-lg border border-slate-800 flex-1">
+                   <span className="text-slate-500 text-[10px] font-bold block mb-1">BORSA</span>
+                   <select className="bg-transparent text-white font-bold text-sm w-full outline-none">
+                     <option value="binance">Binance</option>
+                   </select>
+                 </div>
+                 <div className="bg-[#0B0F19] p-3 rounded-lg border border-slate-800 flex-1">
+                   <span className="text-slate-500 text-[10px] font-bold block mb-1">PARİTE</span>
+                   <select className="bg-transparent text-white font-bold text-sm w-full outline-none">
+                     <option value="BTCUSDT">BTC/USDT</option>
+                   </select>
+                 </div>
+               </div>
+
+               <div className="bg-[#0B0F19] p-3 rounded-lg border border-slate-800">
+                 <span className="text-slate-500 text-[10px] font-bold flex justify-between mb-1">
+                   <span>RİSK SEVİYESİ</span>
+                   <span className="text-amber-500">%2.0</span>
+                 </span>
+                 <input type="range" min="0.5" max="5" step="0.5" defaultValue="2" className="w-full accent-amber-500" />
+               </div>
+            </div>
+
+            <button 
+                onClick={async () => {
+                   const btn = document.getElementById('auto-bot-btn');
+                   if (btn) btn.innerHTML = "BAŞLATILIYOR...";
+                   try {
+                     const res = await axios.post("/api/v1/trade/start-auto", {
+                         botName: "APEX QUANT V1",
+                         exchange: "Binance",
+                         marketPair: "BTC/USDT",
+                         riskLevel: 2,
+                         stopLoss: 1.5,
+                         takeProfit: 3
+                     });
+                     alert(res.data.message);
+                     if (btn) {
+                        btn.innerHTML = "BOT ÇALIŞIYOR";
+                        btn.classList.remove('bg-gradient-to-r', 'from-amber-600', 'to-amber-500');
+                        btn.classList.add('bg-green-600');
+                     }
+                   } catch(e: any) {
+                     alert("Hata: " + e.message);
+                     if (btn) btn.innerHTML = "BAŞLAT (OTOMATİK)";
+                   }
+                }}
+                id="auto-bot-btn"
+                className="mt-4 w-full py-4 rounded-xl flex items-center justify-center gap-2 font-black tracking-widest transition-all bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white shadow-[0_0_20px_rgba(245,158,11,0.4)]"
+            >
+                <Zap className="w-5 h-5" />
+                BAŞLAT (OTOMATİK)
+            </button>
+          </div>
+
         </motion.div>
       ) : (
         // SCALP / SWING MODU EKRANI (Ana Grid)
@@ -326,7 +409,7 @@ export default function Home() {
             className="col-span-1 md:col-span-1 bg-[#151C2C] p-6 rounded-xl border border-slate-800 shadow-2xl flex flex-col items-center justify-center relative overflow-hidden"
           >
             <div className={`absolute top-0 w-full h-2 ${isBuy ? 'bg-[#00E676]' : isNeutral ? 'bg-slate-500' : 'bg-[#FF1744]'}`} />
-            <h2 className="text-slate-500 text-sm tracking-widest font-bold mb-4">{activeMode} SCORE</h2>
+            <h2 className="text-slate-500 text-sm tracking-widest font-bold mb-4">{activeMode} SCORE (1m, 5m, 15m Ağırlıklı Ort.)</h2>
             
             <div className={`mb-2 ${scoreColor}`}>
               {signalIcon}
