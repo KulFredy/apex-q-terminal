@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APEX-Q Elliott Wave Pro</title>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #000000; color: #fff; font-family: 'Inter', -apple-system, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+        .header { display: flex; justify-content: space-between; padding: 15px 20px; background: #0a0a0a; border-bottom: 1px solid #222; }
+        .title { font-size: 1.2rem; font-weight: bold; color: #D4AF37; display: flex; align-items: center; gap: 10px; }
+        .title span { font-size: 0.8rem; background: #333; padding: 2px 6px; border-radius: 4px; color: #aaa; }
+        
+        .controls select { background: #1a1a1a; color: #fff; border: 1px solid #333; padding: 6px 12px; margin-left: 10px; border-radius: 4px; font-size: 0.9rem; }
+        .controls button { background: #D4AF37; color: #000; border: none; padding: 6px 16px; font-weight: bold; cursor: pointer; border-radius: 4px; margin-left: 10px; transition: 0.2s; }
+        .controls button:hover { background: #F1C40F; }
+        
+        .main-container { display: flex; flex: 1; overflow: hidden; }
+        
+        /* SOL PANEL (Grafik) */
+        .chart-section { flex: 3; position: relative; border-right: 1px solid #222; }
+        #chart-container { width: 100%; height: 100%; position: absolute; }
+        #no-wave-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; display: none; z-index: 10; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 8px; border: 1px solid #333;}
+        
+        /* SAĞ PANEL (Analiz ve Setup) */
+        .sidebar-section { flex: 1; min-width: 320px; max-width: 400px; background: #050505; overflow-y: auto; padding: 20px; box-sizing: border-box; }
+        .card { background: #111; border: 1px solid #222; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+        .card-header { font-size: 0.85rem; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 1px solid #222; padding-bottom: 5px; }
+        
+        .invalidation-box { border: 1px solid #ef5350; background: rgba(239, 83, 80, 0.05); text-align: center; }
+        .invalidation-box .level { font-size: 2rem; font-weight: bold; color: #ef5350; margin: 10px 0; }
+        .invalidation-box .desc { font-size: 0.8rem; color: #aaa; }
+        
+        .trade-plan .row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 6px 0; border-bottom: 1px dashed #222; }
+        .trade-plan .row:last-child { border-bottom: none; }
+        .trade-plan .val { font-weight: bold; font-family: monospace; font-size: 0.95rem; }
+        .tp-color { color: #26a69a; }
+        .sl-color { color: #ef5350; }
+        .entry-color { color: #29b6f6; }
+        .neutral-color { color: #D4AF37; }
+        
+        .score-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; margin-bottom: 8px; }
+        .score-bar-bg { flex: 1; height: 6px; background: #222; border-radius: 3px; margin: 0 10px; overflow: hidden; }
+        .score-bar-fill { height: 100%; border-radius: 3px; }
+        
+        .mtf-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; }
+        .mtf-bullish { background: rgba(38, 166, 154, 0.2); color: #26a69a; border: 1px solid #26a69a; }
+        .mtf-bearish { background: rgba(239, 83, 80, 0.2); color: #ef5350; border: 1px solid #ef5350; }
+        
+        .tooltip { position: relative; cursor: help; }
+        .tooltip .tooltiptext {
+            visibility: hidden; width: 220px; background-color: #222; color: #eee;
+            text-align: left; border-radius: 6px; padding: 12px; position: absolute; z-index: 9999;
+            bottom: 105%; left: 0; opacity: 0; transition: opacity 0.3s;
+            font-size: 0.75rem; line-height: 1.4; border: 1px solid #444;
+            box-shadow: 0 -4px 10px rgba(0,0,0,0.5);
+            font-weight: normal;
+        }
+        .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="title">APEX-Q Terminal <span>ELLIOTT WAVE PRO</span></div>
+    <div class="controls">
+        <select id="symbol"><option value="BTC/USDT" selected>BTC/USDT</option></select>
+        <select id="timeframe">
+            <option value="15m">15m</option>
+            <option value="1h" selected>1h</option>
+            <option value="4h">4h</option>
+            <option value="1d">1d</option>
+        </select>
+        <button onclick="scan()">ANALIZE BAŞLA</button>
+    </div>
+</div>
+
+<div class="main-container">
+    <div class="chart-section">
+        <div id="no-wave-overlay"></div>
+        <div id="chart-container"></div>
+    </div>
+    
+    <div class="sidebar-section" id="sidebar" style="display:none;">
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <div style="font-size:0.85rem; color:#888;">Ana Trend (<span id="htf-label">4H</span>)</div>
+            <div id="htf-trend" class="mtf-badge mtf-bullish">YÜKSELİŞ</div>
+        </div>
+
+        <div class="card invalidation-box">
+            <div class="card-header" style="color:#ef5350; border-bottom-color: rgba(239,83,80,0.2);">🚨 SENARYO İPTAL (INVALIDATION)</div>
+            <div class="level" id="sl-level">0.00</div>
+            <div class="desc" id="sl-desc">Fiyat bu seviyenin altına düşerse sayım geçersiz olur.</div>
+        </div>
+
+        <div class="card trade-plan">
+            <div class="card-header">📊 İŞLEM PLANI (TRADE SETUP)</div>
+            <div style="margin-bottom:10px; font-weight:bold; font-size:0.9rem; color:#D4AF37;" id="setup-direction">LONG Bekleniyor</div>
+            <div class="row"><span>Giriş (Entry Zone)</span> <span class="val entry-color" id="entry-zone">0.00</span></div>
+            <div class="row"><span>Stop-Loss (İptal)</span> <span class="val sl-color" id="trade-sl">0.00</span></div>
+            <div class="row"><span>TP1 (Zayıf Direnç)</span> <span class="val tp-color" id="trade-tp1">0.00</span></div>
+            <div class="row"><span>TP2 (Orta Direnç)</span> <span class="val tp-color" id="trade-tp2">0.00</span></div>
+            <div class="row"><span>TP3 (Güçlü Direnç)</span> <span class="val tp-color" id="trade-tp3">0.00</span></div>
+            <div class="row" style="margin-top:10px; border-top:1px solid #333; padding-top:10px;">
+                <span>Risk/Ödül (R:R)</span> <span class="val neutral-color" id="trade-rr">1 : 0.0</span>
+            </div>
+        </div>
+
+        <div class="card tooltip" style="width:100%; display:block; padding:15px; box-sizing:border-box;">
+            <div class="card-header" style="display:flex; justify-content:space-between;">
+                <span>🎯 GÜVEN SKORU (CONFIDENCE)</span>
+                <span id="total-score" style="color:#D4AF37; font-weight:bold; font-size:1rem;">72/100</span>
+            </div>
+            <div class="score-row">
+                <span style="width:90px;">Yapısal Uyum</span>
+                <div class="score-bar-bg"><div class="score-bar-fill" id="bar-structure" style="background:#26a69a; width:80%;"></div></div>
+                <span style="width:25px; text-align:right;" id="score-structure">80</span>
+            </div>
+            <div class="score-row">
+                <span style="width:90px;">Momentum</span>
+                <div class="score-bar-bg"><div class="score-bar-fill" id="bar-momentum" style="background:#D4AF37; width:54%;"></div></div>
+                <span style="width:25px; text-align:right;" id="score-momentum">54</span>
+            </div>
+            <div class="score-row">
+                <span style="width:90px;">Hacim</span>
+                <div class="score-bar-bg"><div class="score-bar-fill" id="bar-volume" style="background:#ef5350; width:43%;"></div></div>
+                <span style="width:25px; text-align:right;" id="score-volume">43</span>
+            </div>
+            <div class="score-row">
+                <span style="width:90px;">MTF Uyumu</span>
+                <div class="score-bar-bg"><div class="score-bar-fill" id="bar-mtf" style="background:#26a69a; width:90%;"></div></div>
+                <span style="width:25px; text-align:right;" id="score-mtf">90</span>
+            </div>
+            <span class="tooltiptext" id="score-details">Yükleniyor...</span>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    let chart;
+    let series;
+    let lineSeries;
+    let volumeSeries;
+
+    function initChart() {
+        if (chart) { chart.remove(); chart = null; }
+        const chartOptions = { 
+            layout: { textColor: '#d1d4dc', backgroundColor: '#000000' },
+            grid: { vertLines: { color: 'rgba(0, 0, 0, 0)' }, horzLines: { color: 'rgba(0, 0, 0, 0)' } },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            rightPriceScale: { borderColor: '#333' },
+            timeScale: { borderColor: '#333', timeVisible: true }
+        };
+        chart = LightweightCharts.createChart(document.getElementById('chart-container'), chartOptions);
+        series = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350' });
+        lineSeries = chart.addLineSeries({ color: '#D4AF37', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid });
+    }
+
+    function getColorForScore(score) {
+        if(score >= 70) return '#26a69a';
+        if(score >= 40) return '#D4AF37';
+        return '#ef5350';
+    }
+
+    let wsConnection = null;
+
+    async function connectLive(sym, tf) {
+        if (wsConnection) { wsConnection.close(); }
+        // Cloudflare Tunnel (or proxy) may block ws:// locally, fall back gracefully
+        try {
+            wsConnection = new WebSocket('ws://187.124.167.99:3006');
+            
+            wsConnection.onopen = () => {
+                console.log('Live Connected');
+                document.getElementById('no-wave-overlay').style.display = 'none';
+                wsConnection.send(JSON.stringify({ action: 'subscribe', symbol: sym, timeframe: tf }));
+            };
+            
+            wsConnection.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'analysis' && msg.data) renderData(msg.data);
+                } catch(e) {}
+            };
+        } catch (e) { console.error("WS error:", e); }
+    }
+
+    async function scan() {
+        try { initChart(); } catch(e) {}
+        const overlay = document.getElementById('no-wave-overlay');
+        overlay.innerHTML = '<div style="color:#D4AF37; font-size:1.2rem;">Veri Çekiliyor... ⏳</div>';
+        overlay.style.display = 'block';
+        document.getElementById('sidebar').style.display = 'none';
+
+        const sym = document.getElementById('symbol').value;
+        const tf = document.getElementById('timeframe').value;
+        
+        try {
+            // Absolute host to ensure reverse proxy forwards correctly from mobile devices
+            const res = await fetch('http://187.124.167.99:3000/api/v1/elliott?symbol=' + sym.replace('/', '%2F') + '&timeframe=' + tf + '&_t=' + Date.now());
+            const data = await res.json();
+            renderData(data);
+            connectLive(sym, tf);
+        } catch (err) { 
+            console.error(err); 
+            overlay.innerHTML = '<div style="color:#ef5350; font-size:1.2rem;">Veri Çekilemedi! API Hatası</div>';
+        }
+    }
+
+    function renderData(data) {
+        if (!data || !data.success || !data.candles) {
+            const overlay = document.getElementById('no-wave-overlay');
+            overlay.innerHTML = '<div style="color:#ef5350; font-size:1.2rem;">Veri Çekilemedi veya Hata!</div>';
+            overlay.style.display = 'block';
+            return;
+        }
+        series.setData(data.candles);
+        
+        if (data.candles && data.candles[0].volume !== undefined) {
+            if (volumeSeries) { chart.removeSeries(volumeSeries); }
+            volumeSeries = chart.addHistogramSeries({
+                color: '#26a69a',
+                priceFormat: { type: 'volume' },
+                priceScaleId: '', 
+                scaleMargins: { top: 0.85, bottom: 0 } // HACİM KISITLANDI (%15)
+            });
+
+            const volumeData = data.candles.map((c, i) => ({
+                time: c.time,
+                value: c.volume,
+                color: i > 0 && data.candles[i].close > data.candles[i-1].close ? 'rgba(38, 166, 154, 0.4)' : 'rgba(239, 83, 80, 0.4)'
+            }));
+            volumeSeries.setData(volumeData);
+        }
+
+        const overlay = document.getElementById('no-wave-overlay');
+        if (data.latestWave) {
+            overlay.style.display = 'none';
+            document.getElementById('sidebar').style.display = 'block';
+            const w = data.latestWave;
+            const isBullish = w.projection.direction === 'BEARISH_CORRECTION'; 
+            
+            lineSeries.setData(w.points.map(p => ({ time: p.time, value: p.price })));
+            series.setMarkers(w.points.map(p => ({
+                time: p.time, position: [0, 2, 4].includes(p.label) ? 'belowBar' : 'aboveBar',
+                color: '#D4AF37', shape: [0, 2, 4].includes(p.label) ? 'arrowUp' : 'arrowDown', text: `W${p.label}`
+            })));
+
+            document.getElementById('htf-label').innerText = data.htf.toUpperCase();
+            document.getElementById('htf-trend').innerText = data.htfTrend === 'BULLISH' ? 'YÜKSELİŞ' : 'DÜŞÜŞ';
+            document.getElementById('htf-trend').className = `mtf-badge ${data.htfTrend === 'BULLISH' ? 'mtf-bullish' : 'mtf-bearish'}`;
+
+            document.getElementById('sl-level').innerText = w.tradeSetup.stopLoss.toFixed(2);
+            document.getElementById('sl-desc').innerText = w.tradeSetup.invalidationReason || 'Fiyat bu seviyenin altına düşerse sayım iptal olur.';
+
+            document.getElementById('setup-direction').innerText = isBullish ? '🎯 SHORT (Düşüş)' : '🎯 LONG (Yükseliş)';
+            document.getElementById('setup-direction').style.color = isBullish ? '#ef5350' : '#26a69a';
+            document.getElementById('entry-zone').innerText = w.tradeSetup.entryZone || '0.00';
+            document.getElementById('trade-sl').innerText = w.tradeSetup.stopLoss.toFixed(2);
+            document.getElementById('trade-tp1').innerText = w.tradeSetup.tp1.toFixed(2);
+            document.getElementById('trade-tp2').innerText = w.tradeSetup.tp2.toFixed(2);
+            document.getElementById('trade-tp3').innerText = w.tradeSetup.tp3.toFixed(2);
+            
+            document.getElementById('trade-rr').innerHTML = `1 : ${(w.tradeSetup.riskReward || 0).toFixed(2)} ` + 
+                (!(w.tradeSetup.isRecommended) ? `<span style="background:#ef5350; color:#fff; padding:2px 6px; border-radius:4px; font-size:0.7rem;">ZAYIF</span>` : `<span style="background:#26a69a; color:#fff; padding:2px 6px; border-radius:4px; font-size:0.7rem;">ONAYLI</span>`);
+
+            document.getElementById('total-score').innerText = `${w.scores.total}/100`;
+            document.getElementById('total-score').style.color = getColorForScore(w.scores.total);
+            
+            document.getElementById('score-details').innerHTML = 
+                "<strong>📊 Skor Dağılımı ("+w.scores.total+"/100)</strong><br><br>" +
+                "<strong>Yapısal (" + w.scores.structure + "%):</strong> Kurallar ve Fib<br>" +
+                "<strong>Momentum (" + w.scores.momentum + "%):</strong> RSI Divergence<br>" +
+                "<strong>Hacim (" + w.scores.volume + "%):</strong> OBV uyumu<br>" +
+                "<strong>MTF (" + w.scores.mtf + "%):</strong> Trend uyumu";
+
+            ['structure', 'momentum', 'volume', 'mtf'].forEach(key => {
+                document.getElementById(`score-${key}`).innerText = w.scores[key];
+                document.getElementById(`bar-${key}`).style.width = `${w.scores[key]}%`;
+                document.getElementById(`bar-${key}`).style.backgroundColor = getColorForScore(w.scores[key]);
+            });
+        } else {
+            overlay.innerHTML = `<div style="font-size:1.5rem; color:#888; margin-bottom:10px;">Geçerli Dalga Yok</div><div style="color:#555; font-size:0.9rem;">Farklı bir periyot seçin.</div>`;
+            overlay.style.display = 'block';
+            document.getElementById('sidebar').style.display = 'none';
+        }
+    }
+
+    async function loadSymbols() {
+        try {
+            const res = await fetch('http://187.124.167.99:3000/api/v1/symbols');
+            const data = await res.json();
+            if (data.success && data.symbols) {
+                const select = document.getElementById('symbol');
+                select.innerHTML = '';
+                data.symbols.forEach(sym => {
+                    const opt = document.createElement('option');
+                    opt.value = sym; opt.innerText = sym;
+                    if (sym === 'BTC/USDT') opt.selected = true;
+                    select.appendChild(opt);
+                });
+            }
+        } catch(e) {}
+    }
+    
+    window.addEventListener("load", () => {
+        loadSymbols();
+        setTimeout(scan, 200);
+    });
+</script>
+</body>
+</html>
